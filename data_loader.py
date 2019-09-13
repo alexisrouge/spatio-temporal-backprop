@@ -1,14 +1,14 @@
 import numpy as np
 import gzip
 
-def load():
+def load(path="dataset"):
     image_size = 28 * 28
     num_train = 60000
     num_test = 10000
-    train_imagef = gzip.open('dataset/train-images-idx3-ubyte.gz','r')
-    test_imagef = gzip.open('dataset/t10k-images-idx3-ubyte.gz','r')
-    train_labelf = gzip.open('dataset/train-labels-idx1-ubyte.gz','r')
-    test_labelf = gzip.open('dataset/t10k-labels-idx1-ubyte.gz','r')
+    train_imagef = gzip.open(path+"/train-images-idx3-ubyte.gz","r")
+    test_imagef = gzip.open(path+"/t10k-images-idx3-ubyte.gz","r")
+    train_labelf = gzip.open(path+"/train-labels-idx1-ubyte.gz","r")
+    test_labelf = gzip.open(path+"/t10k-labels-idx1-ubyte.gz","r")
 
     train_imagef.read(16)
     train_labelf.read(8)
@@ -29,7 +29,7 @@ def load():
     y_train = np.frombuffer(train_labelb, dtype=np.uint8).astype(np.int64)
     y_test = np.frombuffer(test_labelb, dtype=np.uint8).astype(np.int64)
 
-    return (x_train, y_train),(x_test, y_test)
+    return (x_train/255., y_train),(x_test/255., y_test)
 
 
 def one_hot_encode(y_train, y_test, num_classes=10):
