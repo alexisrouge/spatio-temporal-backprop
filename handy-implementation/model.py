@@ -199,7 +199,8 @@ params = {
     "lr": .2,
     "beta1": .5,
     "beta2": .999,
-    "eps": 1e-8
+    "eps": 1e-8,
+    "noise_factor": .05
 }
 
 
@@ -213,6 +214,7 @@ class Solver:
         self.b1 = params["beta1"]
         self.b2 = params["beta2"]
         self.eps = params["eps"]
+        self.noise_factor = parmas["noise_factor"]
         self.m = 0
         self.v = 0
         self.Th = 0
@@ -280,7 +282,9 @@ class Solver:
                 idx = mask[i*self.batch_size: (i+1)*self.batch_size]
                 x_batch = x_train[idx]
                 y_batch = y_train[idx]
-                self.step(model, x_batch, y_batch)
+                noise = (2*np.random.random(x_batch.shape)-1)*self.noise_factor
+                x_noisy = np.abs(x_batch + noise)
+                self.step(model, x_noisy, y_batch)
                 logits = model.predict(x_batch)
                 loss += 1/2/n_samples*np.sum(np.linalg.norm(y_batch - logits, axis=1))
                 target = np.argmax(y_batch, axis=1)
