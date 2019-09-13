@@ -4,7 +4,7 @@
 # Dynamic
 
 * Differential equation of the neuron:
-$$\tau \frac{du(t)}{dt} = -u(t) + I(t)$$
+\\(tau \frac{du(t)}{dt} = -u(t) + I(t)\\)
 Then each time that the neuron's potential goes above the threshold $V_{th}$,
 the neuron spikes and potential is reset to $u_{rest}$
 
