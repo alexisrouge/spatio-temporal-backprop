@@ -104,7 +104,7 @@ class LIF_layer:
         return delta, epsilon
 
 
-class LIF_net:
+class LIF_network:
     # implement the hole network, embbeding all the layers
     # T here is the number of time step during which the input is exposed to
     # the network
@@ -214,7 +214,7 @@ class Solver:
         self.b1 = params["beta1"]
         self.b2 = params["beta2"]
         self.eps = params["eps"]
-        self.noise_factor = parmas["noise_factor"]
+        self.noise_factor = params["noise_factor"]
         self.m = 0
         self.v = 0
         self.Th = 0
