@@ -200,7 +200,7 @@ params = {
     "beta1": .5,
     "beta2": .999,
     "eps": 1e-8,
-    "noise_factor": .05
+    "noise_factor": .01
 }
 
 
