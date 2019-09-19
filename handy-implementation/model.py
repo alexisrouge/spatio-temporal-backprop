@@ -159,10 +159,12 @@ class LIF_network:
     def compute_grad(self, input, targets):
         # compute
         S = input.shape[0]
-        hist_epsO = np.zeros((self.T, S, targets.shape[1]))
-        hist_epsH = np.zeros((self.T, S, self.hidden.size_out))
-        deltaO, epsO = None, None
-        deltaH, epsH = None, None
+        #hist_epsO = np.zeros((self.T, S, targets.shape[1]))
+        #hist_epsH = np.zeros((self.T, S, self.hidden.size_out))
+        deltaO, epsO, dbO = None, None, None
+        deltaH, epsH, dbO = None, None, None
+        dWO = np.zeros_like(self.out.W)
+        dWH = np.zeros_like(self.hidden.W)
         for t in range(self.T-1, -1, -1):
             deltaO, epsO = self.out.grad(last=(t == self.T-1),
                                          border=True,
@@ -182,25 +184,33 @@ class LIF_network:
                                             deltaT=deltaH,
                                             epsilonT=epsH,
                                             UN=self.out.potential[t])
-            hist_epsO[t] = epsO
-            hist_epsH[t] = epsH
+            if (t == self.T-1):
+                dbO = epsO
+                dbH = epsH
+            else:
+                dbO = dbO + epsO
+                dbH = dbH + epsH
+            dWO = dWO + np.dot(epsO.T, self.hidden.spikes[t])
+            dWH = dWH + np.dot(epsH.T, input)
+            #hist_epsO[t] = epsO
+            #hist_epsH[t] = epsH
 
-        dbO = np.sum(hist_epsO, axis=(0, 1))
-        dbH = np.sum(hist_epsH, axis=(0, 1))
-        dWO = np.zeros_like(self.out.W)
-        dWH = np.zeros_like(self.hidden.W)
-        for t in range(self.T):
-            dWO = dWO + np.dot(hist_epsO[t].T, self.hidden.spikes[t])
-            dWH = dWH + np.dot(hist_epsH[t].T, input)
+        dbO = np.sum(dbO, axis=0)
+        dbH = np.sum(dbH, axis=0)
+        #dbO = np.sum(hist_epsO, axis=(0, 1))
+        #dbH = np.sum(hist_epsH, axis=(0, 1))
+        #for t in range(self.T):
+            #dWO = dWO + np.dot(hist_epsO[t].T, self.hidden.spikes[t])
+            #dWH = dWH + np.dot(hist_epsH[t].T, input)
         return (dWH, dbH, dWO, dbO)
 
 
 params = {
-    "lr": .2,
+    "lr": .1,
     "beta1": .5,
     "beta2": .999,
     "eps": 1e-8,
-    "noise_factor": .01
+    "noise_factor": .005
 }
 
 
