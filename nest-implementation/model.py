@@ -71,11 +71,13 @@ class LIF_layer:
     def reset(self):
         nest.ResetNetwork()
 
-    def store()
-
     def store(self, T, start):
         num_steps = int(T/self.step_size)
         num_classes = self.size_out
+        num_sample = self.storePotential(T, num_steps, num_classes, start)
+        self.storeSpikes(T, num_steps, num_classes, start, num_sample)
+
+    def storePotential(self, T, num_steps, num_classes, start):
         report = nest.GetStatus(self.multimeter)[0]
         time_mask = report["events"]["times"] >= start
         num_sample = len(report["events"]["senders"][time_mask]) // (num_steps*num_classes)
@@ -85,11 +87,10 @@ class LIF_layer:
             pot = report["events"]["V_m"][time_mask][events]
             potential[:,:, i] = pot.reshape((num_sample, num_steps))
         self.potential = potential
-        self.spikes = myDetector(potential, self.V_th, self.reset)
+        # self.spikes = myDetector(potential, self.V_th, self.reset)
+        return num_sample
 
-    def storeSpikes(self, T, start, num_sample):
-        num_steps = int(T/self.step_size)
-        num_classes = self.size_out
+    def storeSpikes(self, T, num_steps, num_classes, start, num_sample):
         report = nest.GetStatus(self.detector)[0]
         time_mask = report["events"]["times"] >= start
         spikes = np.zeros((num_sample, num_steps, num_classes))
@@ -103,17 +104,19 @@ class LIF_layer:
         self.spikes = spikes
 
 
-    def getSpikeCount(self, num_sample,  T):
+    def getSpikeCount(self, T, start, num_sample):
         num_classes = self.size_out
+        num_steps = int(T/self.step_size)
         spike_count = np.zeros((num_sample, num_classes))
         report = nest.GetStatus(self.detector)[0]
+        time_mask = report["events"]["times"] >= start
         for i in range(num_classes):
-            events = report["events"]["senders"] == self.neurons[i]  # spikes of neuron[i]
-            tevents = report["events"]["times"][events] - start  # timestp of these spikes in ms
-            for k in range(num_sample):
-                mini = tevents > k*T
-                maxi = tevents <= (k+1)*T
-                spike_count[k, i] = len(tevents[mini*maxi])
+            events = report["events"]["senders"][time_mask] == self.neurons[i]  # spikes of neuron[i]
+            ts = (report["events"]["times"][time_mask][events] - start)*10
+            ts = np.array(ts, int)
+            times = np.zeros(num_sample*num_steps)
+            times[ts] = 1
+            spike_count[:, i] = np.sum(times.reshape((num_sample, num_steps)), axis=1)
         return spike_count
 
 
@@ -195,7 +198,7 @@ class LIF_network:
         num_sample = inpt.shape[0]
         #print("num_sample:", num_sample)
         start = self.stop
-        print("start:", start)
+        # print("start:", start)
         stop = start + self.T
         #print(t_step)
         for t in range(num_sample):
@@ -206,7 +209,6 @@ class LIF_network:
                        } for i in range(self.size_in)]
             nest.SetStatus(self.inpt, indict)
             nest.Simulate(self.T + .1*(start==.1)*(t==0))
-            print("simulate for:", self.T + .1*(start==.1)*(t==0))
             start = stop
             stop = start + self.T
         self.start = self.stop
@@ -216,7 +218,7 @@ class LIF_network:
     def predict(self, inpt):
         num_sample = inpt.shape[0]
         self.run(inpt)
-        S = self.outpt.getSpikeCount(num_sample, self.T, self.start)
+        S = self.outpt.getSpikeCount(self.T, self.start, num_sample)
         return 1./self.T*S
 
 
@@ -224,11 +226,11 @@ class LIF_network:
         self.hidden.store(self.T, self.start)
         self.outpt.store(self.T, self.start)
 
+
     def compute_grad(self, input, targets):
         num_sample = input.shape[0]
         num_steps = int(self.T*10)
-        self.hidden.store(self.T)
-        self.outpt.store(self.T)
+        self.store()
         hist_epsO = np.zeros((num_steps, num_sample, targets.shape[1]))
         hist_epsH = np.zeros((num_steps, num_sample, self.hidden_size))
         deltaO, epsO = None, None
