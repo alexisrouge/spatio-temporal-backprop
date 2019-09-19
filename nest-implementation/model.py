@@ -3,22 +3,25 @@ import nest
 
 params = {
     #"E_L": 0., # U_rest ie relaxed potential when I_e=0 (mV)
-    #"t_ref": .2, # refactory time (no spikes during this time) (ms)
+    "t_ref": .2, # refactory time (no spikes during this time) (ms)
     #"V_m": 0., # initial membrane potential (mV)
     #"V_min": -.5, # minimal potential that the membrane can reach (mV)
     "V_reset": -70., # potential just after firing (mV)
     "V_th": -55., # threshold potential (mV)
     #"C_m": 200., # capacity of the membrane (pF)
-    "tau_m": 20. # neuron exp time constant (ms)
+    "tau_m": 10. # neuron exp time constant (ms)
     #"I_e": 5. # input current (pA)
 }
 
 # R = tau_m/C_m
 # max reachable potential with constant input current is V_reset + tau_m/C*I_e
 
-def initW(size_in, size_out, weight=100):
-    W = np.random.random((size_out, size_in))*weight
-    return W
+def initW(size_in, size_out):
+    # initialization function for network weights. Recommended form of Wu et al.
+    W = np.random.random((size_out, size_in))
+    sqrW = W**2
+    normW = np.sqrt(np.sum(sqrW, axis=1)).reshape((size_out, 1))
+    return W / normW
 
 a = 1.
 
@@ -45,8 +48,8 @@ def myDetector(x, V_th, reset):
 
 
 class LIF_layer:
-    def __init__(self, size_in, size_out, gradS=gradS, params=params, weight=None):
-        self.W = initW(size_in, size_out)
+    def __init__(self, size_in, size_out, gradS=gradS, params=params, weight=1):
+        self.W = initW(size_in, size_out)*weight
         self.neurons = nest.Create("iaf_psc_delta", size_out, params)
         #print(nest.GetStatus((self.neurons[0],)))
         self.multimeter = nest.Create("multimeter", params={"withtime":True,
@@ -68,23 +71,36 @@ class LIF_layer:
     def reset(self):
         nest.ResetNetwork()
 
+    def store()
 
-    def store(self, T):
+    def store(self, T, start):
         num_steps = int(T/self.step_size)
         num_classes = self.size_out
         report = nest.GetStatus(self.multimeter)[0]
-        num_sample = len(report["events"]["senders"]) // (num_steps*num_classes)
+        time_mask = report["events"]["times"] >= start
+        num_sample = len(report["events"]["senders"][time_mask]) // (num_steps*num_classes)
         potential = np.zeros((num_sample, num_steps, num_classes))
         for i in range(num_classes):
-            events = report["events"]["senders"] == self.neurons[i] # idx of events of neuron[i]
-            #tevents = report["events"]["times"][events] # timestp of these events in ms
-            #times = np.array(tevents*10, int) # timestp of these events in ms 1e-1
-            pot = report["events"]["V_m"][events]
-            for k in range(num_sample):
-                potential[k, :, i] = pot[k*num_steps:(k+1)*num_steps]
+            events = report["events"]["senders"][time_mask] == self.neurons[i] # idx of events of neuron[i]
+            pot = report["events"]["V_m"][time_mask][events]
+            potential[:,:, i] = pot.reshape((num_sample, num_steps))
         self.potential = potential
         self.spikes = myDetector(potential, self.V_th, self.reset)
 
+    def storeSpikes(self, T, start, num_sample):
+        num_steps = int(T/self.step_size)
+        num_classes = self.size_out
+        report = nest.GetStatus(self.detector)[0]
+        time_mask = report["events"]["times"] >= start
+        spikes = np.zeros((num_sample, num_steps, num_classes))
+        for i in range(num_classes):
+            events = report["events"]["senders"][time_mask] == self.neurons[i]
+            ts = (report["events"]["times"][time_mask][events] - start)*10
+            ts = np.array(ts, int)
+            times = np.zeros(num_sample*num_steps)
+            times[ts] = 1
+            spikes[:, :, i] = times.reshape((num_sample, num_steps))
+        self.spikes = spikes
 
 
     def getSpikeCount(self, num_sample,  T):
@@ -136,23 +152,24 @@ class LIF_network:
         self.size_in = size_in
         self.hidden_size = hidden_size
         #self.inpt = nest.Create("step_current_generator", self.size_in)
-        self.inpt = nest.Create("poisson_generator", self.size_in)
+        self.inpt = nest.Create("spike_generator", self.size_in)
         self.hidden = LIF_layer(size_in,
                                 hidden_size,
                                 gradS,
                                 params,
-                                weight=1)
+                                weight=2.5)
         self.outpt = LIF_layer(hidden_size,
                              size_out,
                              gradS,
                              params,
-                             weight=1)
+                             weight=.75)
         nest.Connect(self.inpt, self.hidden.neurons, syn_spec={"weight": self.hidden.W, "delay": .1})
         nest.Connect(self.hidden.neurons, self.outpt.neurons, syn_spec={"weight": self.outpt.W, "delay": .1})
         self.i2h = nest.GetConnections(self.inpt, self.hidden.neurons)
         self.h2o = nest.GetConnections(self.hidden.neurons, self.outpt.neurons)
         self.T = T
         self.start = .1
+        self.stop = .1
 
 
     def reset(self):
@@ -169,33 +186,31 @@ class LIF_network:
             nest.SetStatus(self.h2o, [{"weight": self.outpt.W[i,j]} for i in range(size_out) for j in range(size_in)])
 
     def run(self, inpt):
-        nest.ResetNetwork()
+        # nest.ResetNetwork()
         self.spd = nest.Create("spike_detector", params={"withgid": True,
                                                 "withtime": True,
+
                                                 "precise_times": True})
         nest.Connect(self.inpt, self.spd)
         num_sample = inpt.shape[0]
         #print("num_sample:", num_sample)
-        start = self.start
+        start = self.stop
+        print("start:", start)
         stop = start + self.T
-        t_step = np.linspace(start,
-                             num_sample*self.T + start,
-                             num_sample+1,
-                             endpoint=True)
         #print(t_step)
         for t in range(num_sample):
-            indict = [{"start": start, "stop": stop, "rate": inpt[t,i]*500} for i in range(self.size_in)]
+            indict = [{"start": start,
+                       "stop": stop,
+                       "spike_times": np.linspace(start, stop, inpt[t,i]*25),
+                       "allow_offgrid_times":True
+                       } for i in range(self.size_in)]
             nest.SetStatus(self.inpt, indict)
-            nest.Simulate(self.T + .1)
+            nest.Simulate(self.T + .1*(start==.1)*(t==0))
+            print("simulate for:", self.T + .1*(start==.1)*(t==0))
             start = stop
             stop = start + self.T
-        #indict = [{"start": t_step, "stop": t_step + self.T, "rate": inpt[:,i]*1e3} for i in range(self.size_in)]
-        #print("input shape:", inpt.shape)
-        #print("number of time steps:", len(t_step))
-        #nest.SetStatus(self.inpt, indict)
-        #nest.Simulate(num_sample*self.T+1)
-        #nest.Simulate(num_sample*self.T + .1)
-        self.start = num_sample*self.T + self.start
+        self.start = self.stop
+        self.stop = num_sample*self.T + self.start
 
 
     def predict(self, inpt):
@@ -206,8 +221,8 @@ class LIF_network:
 
 
     def store(self):
-        self.hidden.store(self.T)
-        self.outpt.store(self.T)
+        self.hidden.store(self.T, self.start)
+        self.outpt.store(self.T, self.start)
 
     def compute_grad(self, input, targets):
         num_sample = input.shape[0]
